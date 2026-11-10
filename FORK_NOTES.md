@@ -76,6 +76,8 @@ node scripts/smoke_test.mjs                    # live MCP calls against FreeCAD
 against the running GUI process: status, document, object, edit, get, view, `execute_code`,
 `execute_code_headless`, cleanup. Screenshots land in `out/`. It exits non-zero if any call
 comes back with `isError`. Budget 300s: `execute_code_headless` starts a second full FreeCAD.
+It exits explicitly — a killed server leaves its stdio pipes open, which otherwise leaves
+Node waiting and the run hanging after every result has printed.
 
 ## Local wiring on this machine
 
