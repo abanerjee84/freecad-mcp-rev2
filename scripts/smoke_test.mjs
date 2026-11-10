@@ -121,7 +121,10 @@ try {
   failures += 1;
 } finally {
   try { proc.stdin?.end(); } catch {}
+  // Killing the server leaves its pipes open until the process is reaped, which
+  // keeps Node's event loop alive and the run hanging after everything printed.
+  try { proc.stdout?.destroy(); proc.stderr?.destroy(); proc.removeAllListeners(); } catch {}
   if (WIN) { try { spawnSync("taskkill", ["/F", "/T", "/PID", String(proc.pid)], { stdio: "ignore" }); } catch {} }
   else proc.kill();
 }
-process.exitCode = failures ? 1 : 0;
+process.exit(failures ? 1 : 0);
