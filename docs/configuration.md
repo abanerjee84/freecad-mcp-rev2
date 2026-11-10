@@ -36,6 +36,24 @@ and `view_name`. The global flag takes precedence over `include_screenshot`.
 See [screenshot options](tools.md#screenshot-options) for the applicable tools
 and the explicit `get_view` tool.
 
+A capture of a 3D view that has never been drawn comes back as one flat colour.
+The addon forces a redraw and re-shoots once when that happens, so an image that
+still reads uniform means an empty scene, not a stale frame.
+
+## Headless FreeCAD discovery
+
+`execute_code_headless` needs a `freecadcmd` executable. It looks for one on
+`PATH`, then inside a FreeCAD install directory — `Program Files\FreeCAD 1.1\bin\`
+on Windows, `FreeCAD.app/Contents/bin/` on macOS, `/opt` and `/usr/local` on
+Linux — then the Flatpak. The Windows installer never puts `bin` on `PATH`, so
+that second lookup is what makes headless work with no configuration at all.
+
+Override it with `--freecadcmd`, or set `FREECAD_DIR` to the install folder:
+
+```json
+{ "env": { "FREECAD_DIR": "C:\\Program Files\\FreeCAD 1.1" } }
+```
+
 ## Remote connections
 
 By default, the RPC server listens on `localhost` and does not accept remote

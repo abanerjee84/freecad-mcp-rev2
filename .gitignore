@@ -2,3 +2,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 results/
+
+out/
+.ptemp/
+node_modules/

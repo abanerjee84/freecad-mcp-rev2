@@ -49,6 +49,20 @@ whole repository into `Mod` or add a second `FreeCADMCP` directory level. If the
 workbench is missing after restarting FreeCAD, open **View → Panels → Report view**
 and inspect addon import errors.
 
+### Installer script
+
+One command finds the Mod directory, copies the addon, and can turn on RPC
+auto-start, which otherwise means clicking **Start RPC Server** after every
+launch:
+
+```bash
+python scripts/install_addon.py --auto-start
+python scripts/install_addon.py --check   # what is installed, change nothing
+```
+
+Pass `--dest` when FreeCAD's user directory is somewhere the script cannot
+guess. Restart FreeCAD afterwards.
+
 ### Copy commands
 
 Run the commands for your installation from the cloned repository.

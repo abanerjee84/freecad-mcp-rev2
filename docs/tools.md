@@ -24,6 +24,33 @@
 | `get_parts_list` | List parts in the [FreeCAD parts library](https://github.com/FreeCAD/FreeCAD-library). |
 | `run_fem_analysis` | Run CalculiX on an existing analysis and return summary results. |
 
+### Parameter names
+
+Names as the tools declare them, not as they read in prose. A wrong name is a
+pydantic validation error, not a typo to be re-guessed:
+
+| Tool | Arguments (`*` required) |
+| --- | --- |
+| `create_document` | `*name` |
+| `list_documents` | none |
+| `reload_document` | `*doc_name` |
+| `create_object` | `*doc_name`, `*obj_type`, `*obj_name`, `obj_properties`, `analysis_name`, `include_screenshot`, `view_name` |
+| `edit_object` | `*doc_name`, `*obj_name`, `*obj_properties`, `include_screenshot`, `view_name` |
+| `delete_object` | `*doc_name`, `*obj_name`, `include_screenshot`, `view_name` |
+| `get_objects` / `get_object` | `*doc_name`, (`obj_name` for `get_object`), `include_screenshot`, `view_name` |
+| `get_view` | `*view_name`, `width`, `height`, `focus_object` |
+| `execute_code` | `*code`, `include_screenshot`, `view_name`, `timeout` |
+| `execute_code_async` / `get_async_status` | `*code` / `job_id` |
+| `execute_code_headless` | `*code`, `timeout` |
+| `get_rpc_status` | none |
+| `insert_part_from_library` / `get_parts_list` | `*relative_path` / none |
+| `run_fem_analysis` | `*doc_name`, `*analysis_name`, `timeout`, `include_screenshot`, `view_name` |
+
+The XML-RPC layer underneath uses a different shape again —
+`create_object(doc_name, {"Name": …, "Type": …, "Properties": {…}})`, and
+`execute_code` there takes no screenshot argument. Only the MCP names above
+are what a client sends.
+
 See [code execution](execution.md) for execution modes, shared script state,
 background job tracking, and timeout handling.
 
