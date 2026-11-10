@@ -23,13 +23,72 @@ logger = logging.getLogger("FreeCADMCPserver")
 FLATPAK_APP = "org.freecad.FreeCAD"
 _NOISE = ("%)", "Importing project files", "Postprocessing", "FreeCAD 1.", "(C) 2001", "LGPL")
 
+# Set FREECAD_DIR to a FreeCAD install folder to override the search below.
+FREECAD_DIR_ENV = "FREECAD_DIR"
+
+# Root-relative globs, newest install first ("FreeCAD 1.2" sorts above
+# "FreeCAD 1.1" and "FreeCAD 0.19" by name, which is the usual order).
+_WIN_ROOTS_ENV = ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA")
+_WIN_PATTERNS = (
+    "FreeCAD*/bin/freecadcmd.exe",
+    "FreeCAD*/bin/FreeCADCmd.exe",
+    "FreeCAD*/bin/freecad.cmd",
+    "Programs/FreeCAD*/bin/freecadcmd.exe",
+)
+_POSIX_ROOTS = ("/Applications", "/opt", "/usr/local", "~")
+_POSIX_PATTERNS = (
+    "FreeCAD.app/Contents/bin/freecadcmd",
+    "FreeCAD*/Contents/bin/freecadcmd",
+    "FreeCAD*/Contents/MacOS/freecadcmd",
+    "freecad*/bin/freecadcmd",
+    "FreeCAD*/bin/freecadcmd",
+)
+
+
+def _install_roots() -> list[Path]:
+    """Directories that plausibly hold a FreeCAD installation."""
+    override = os.environ.get(FREECAD_DIR_ENV)
+    if override:
+        return [Path(override)]
+    if os.name == "nt":
+        return [Path(value) for value in (os.environ.get(name) for name in _WIN_ROOTS_ENV) if value]
+    return [Path(entry).expanduser() for entry in _POSIX_ROOTS]
+
+
+def _install_patterns() -> tuple[str, ...]:
+    return _WIN_PATTERNS if os.name == "nt" else _POSIX_PATTERNS
+
+
+def _bundled_freecadcmd() -> list[str] | None:
+    """Find the executable inside a GUI install that never touches PATH.
+
+    The Windows installer ships ``bin\freecadcmd.exe`` but does not add it to
+    PATH, and the macOS bundle keeps it inside ``Contents/bin``, so PATH
+    lookups miss both and ``execute_code_headless`` reported "freecadcmd not
+    found" for a perfectly good install.
+    """
+    patterns = _install_patterns()
+    for root in _install_roots():
+        for pattern in patterns:
+            try:
+                matches = sorted(root.glob(pattern), key=lambda p: str(p), reverse=True)
+            except (OSError, ValueError):
+                continue
+            for match in matches:
+                if match.is_file():
+                    return [str(match)]
+    return None
+
 
 def detect_freecadcmd() -> list[str] | None:
-    """Find a headless FreeCAD executable: PATH first, then the Flatpak."""
+    """Find a headless FreeCAD executable: PATH, then an install directory, then Flatpak."""
     for name in ("freecadcmd", "FreeCADCmd", "freecadcmd.exe", "freecad.cmd"):
         path = shutil.which(name)
         if path:
             return [path]
+    bundled = _bundled_freecadcmd()
+    if bundled:
+        return bundled
     flatpak = shutil.which("flatpak")
     if flatpak:
         try:
@@ -87,7 +146,10 @@ def run_headless(code: str, timeout: float, command: list[str] | None) -> dict[s
     if not command:
         return {
             "success": False,
-            "error": "freecadcmd not found: install FreeCAD, or pass --freecadcmd to freecad-mcp",
+            "error": (
+                "freecadcmd not found: install FreeCAD, set FREECAD_DIR to its install "
+                "directory, or pass --freecadcmd to freecad-mcp"
+            ),
         }
     with tempfile.NamedTemporaryFile(
         "w", suffix=".py", dir=_script_dir(), delete=False, encoding="utf-8"

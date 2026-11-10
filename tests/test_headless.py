@@ -185,3 +185,47 @@ def test_headless_cannot_read_the_open_mcp_stdin() -> None:
         result = json.loads(parent.stdout.read())
     assert result["success"] is True, result
     assert result["output"] == "''"
+
+
+def _fake_install(tmp_path: Path, relative: str) -> Path:
+    exe = tmp_path / relative
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    exe.write_text("")
+    return exe
+
+
+def test_install_directory_is_searched_when_path_is_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Windows installer ships bin/freecadcmd.exe and never adds it to PATH."""
+    exe = _fake_install(tmp_path, "FreeCAD 1.1/bin/freecadcmd.exe")
+    monkeypatch.setattr(headless.shutil, "which", lambda name: None)
+    monkeypatch.setattr(headless, "_install_roots", lambda: [tmp_path])
+    monkeypatch.setattr(headless, "_install_patterns", lambda: ("FreeCAD*/bin/freecadcmd.exe",))
+    assert headless.detect_freecadcmd() == [str(exe)]
+
+
+def test_the_newest_install_directory_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_install(tmp_path, "FreeCAD 0.19/bin/freecadcmd.exe")
+    newer = _fake_install(tmp_path, "FreeCAD 1.2/bin/freecadcmd.exe")
+    monkeypatch.setattr(headless.shutil, "which", lambda name: None)
+    monkeypatch.setattr(headless, "_install_roots", lambda: [tmp_path])
+    monkeypatch.setattr(headless, "_install_patterns", lambda: ("FreeCAD*/bin/freecadcmd.exe",))
+    assert headless.detect_freecadcmd() == [str(newer)]
+
+
+def test_freecad_dir_overrides_the_search(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    exe = _fake_install(tmp_path, "bin/freecadcmd")
+    monkeypatch.setenv(headless.FREECAD_DIR_ENV, str(tmp_path))
+    monkeypatch.setattr(headless.shutil, "which", lambda name: None)
+    monkeypatch.setattr(headless, "_install_patterns", lambda: ("bin/freecadcmd",))
+    assert headless.detect_freecadcmd() == [str(exe)]
+
+
+def test_path_still_beats_an_install_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        headless.shutil, "which", lambda name: "/usr/bin/freecadcmd" if name == "freecadcmd" else None
+    )
+    _fake_install(tmp_path, "FreeCAD 1.1/bin/freecadcmd.exe")
+    monkeypatch.setattr(headless, "_install_roots", lambda: [tmp_path])
+    assert headless.detect_freecadcmd() == ["/usr/bin/freecadcmd"]
