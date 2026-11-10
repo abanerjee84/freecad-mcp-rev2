@@ -109,6 +109,67 @@ def get_displayed_3d_view() -> Any:
     return view
 
 
+def _force_repaint(view: Any) -> None:
+    """Ask the GL view to draw a fresh frame before it is read back.
+
+    ``saveImage()`` reads what the view last rendered; a view that has never
+    been exposed has never rendered anything. ``redraw()`` exists on
+    ``View3DInventorPy`` and is absent on other view types, so failures here
+    are ignored.
+    """
+    try:
+        view.redraw()
+    except Exception:
+        pass
+    _flush_gui_events()
+
+
+def _capture_view_image(
+    view: Any,
+    save_path: str,
+    width: int,
+    height: int,
+) -> None:
+    """Render the view into ``save_path``.
+
+    On Wayland the offscreen GL contexts used by the default saveImage()
+    method render solid black; "Framebuffer" reads back the on-screen GL
+    context and captures correctly (and also works on X11/Windows/macOS).
+    FreeCAD < 1.0 lacks the method argument — fall back to the legacy call.
+    """
+    try:
+        view.saveImage(save_path, width, height, "Current", "Framebuffer")
+    except TypeError:
+        view.saveImage(save_path, width, height, "Current")
+
+
+def _captured_image_is_flat(save_path: str) -> bool:
+    """True when a saved PNG is one uniform colour, i.e. an unrendered frame.
+
+    Sampled on a coarse grid through QImage, which FreeCAD always ships with,
+    so this adds no dependency. A genuinely empty scene also reads flat, which
+    costs one extra capture attempt and nothing else.
+    """
+    try:
+        from PySide import QtGui
+
+        image = QtGui.QImage(save_path)
+        if image.isNull():
+            return False
+        colours = set()
+        step_x = max(1, image.width() // 32)
+        step_y = max(1, image.height() // 32)
+        for y in range(0, image.height(), step_y):
+            for x in range(0, image.width(), step_x):
+                colour = image.pixelColor(x, y)
+                colours.add((colour.red(), colour.green(), colour.blue()))
+                if len(colours) > 3:
+                    return False
+        return True
+    except Exception:
+        return False
+
+
 def save_active_screenshot(
     save_path: str,
     view_name: str = "Isometric",
@@ -158,21 +219,28 @@ def save_active_screenshot(
         # frame. Re-issuing the framing synchronously forces a redraw first. The
         # flush above is kept intentionally — Linux needs it for the stale-frame
         # fix (#51/#53).
-        if focused_selection and focus_target is not None:
-            FreeCADGui.Selection.addSelection(focus_target)
-            FreeCADGui.SendMsgToActiveView("ViewSelection")
-            FreeCADGui.Selection.clearSelection()
-        else:
-            view.fitAll()
+        def reframe() -> None:
+            if focused_selection and focus_target is not None:
+                FreeCADGui.Selection.addSelection(focus_target)
+                FreeCADGui.SendMsgToActiveView("ViewSelection")
+                FreeCADGui.Selection.clearSelection()
+            else:
+                view.fitAll()
+
         resolved_width, resolved_height = _resolve_screenshot_size(view, width, height)
-        # On Wayland the offscreen GL contexts used by the default saveImage()
-        # method render solid black; "Framebuffer" reads back the on-screen GL
-        # context and captures correctly (and also works on X11/Windows/macOS).
-        # FreeCAD < 1.0 lacks the method argument — fall back to the legacy call.
-        try:
-            view.saveImage(save_path, resolved_width, resolved_height, "Current", "Framebuffer")
-        except TypeError:
-            view.saveImage(save_path, resolved_width, resolved_height, "Current")
+
+        # The first capture of a view that has never been shown — right after
+        # FreeCAD starts with only the Start page, or right after a document's
+        # MDI window is created — reads back an empty frame, so the client gets
+        # a solid-colour image it cannot tell apart from an empty scene. Force a
+        # real redraw and re-shoot once when the frame comes back flat.
+        _force_repaint(view)
+        reframe()
+        _capture_view_image(view, save_path, resolved_width, resolved_height)
+        if _captured_image_is_flat(save_path):
+            _force_repaint(view)
+            reframe()
+            _capture_view_image(view, save_path, resolved_width, resolved_height)
 
         if focused_selection:
             FreeCADGui.Selection.clearSelection()
